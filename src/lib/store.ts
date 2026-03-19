@@ -17,21 +17,11 @@ import type {
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholder-key"
 );
 
 export { supabase };
-
-// ─── Helper: get current user id (throws if not logged in) ───────────────────
-async function uid(): Promise<string> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) throw new Error("Not authenticated");
-  return user.id;
-}
 
 // ─── Store interface ──────────────────────────────────────────────────────────
 interface FinanceStore {
@@ -54,7 +44,7 @@ interface FinanceStore {
   updateTransaction: (id: string, data: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
 
-  // Budget categories (kept local — per-user limits stored in profiles table as JSON)
+  // Budget categories
   budgetCategories: BudgetCategory[];
   updateBudgetLimit: (category: string, limit: number) => Promise<void>;
 
@@ -83,7 +73,7 @@ interface FinanceStore {
   completeCadenceItem: (itemId: string, periodKey: string) => Promise<void>;
   uncompleteCadenceItem: (itemId: string, periodKey: string) => Promise<void>;
 
-  // Selected month (local UI state only)
+  // UI state
   selectedMonth: string;
   setSelectedMonth: (month: string) => void;
 
@@ -94,6 +84,20 @@ interface FinanceStore {
 // ─── Current month key ────────────────────────────────────────────────────────
 const now = new Date();
 const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+// ─── Helper: correct redirect URL regardless of environment ──────────────────
+function getRedirectUrl(): string {
+  // NEXT_PUBLIC_SITE_URL is set in Vercel env vars to your production URL.
+  // Locally it points to localhost:3000 via .env.local.
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+  // Fallback: use current browser origin (only available client-side)
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return "";
+}
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 export const useStore = create<FinanceStore>()((set, get) => ({
@@ -137,19 +141,45 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     set({ isLoading: false });
   },
 
+  // ── FIXED: uses NEXT_PUBLIC_SITE_URL so the magic link always points
+  //    to the right domain (Vercel in prod, localhost in dev) ────────────────
   signIn: async (email: string) => {
+    const redirectTo = getRedirectUrl();
+
+    // Client-side cooldown — prevent re-sending within 60 seconds
+    if (typeof window !== "undefined") {
+      const lastSent = localStorage.getItem("maslow_otp_last_sent");
+      if (lastSent) {
+        const secondsAgo = (Date.now() - parseInt(lastSent)) / 1000;
+        if (secondsAgo < 60) {
+          throw new Error(
+            `Please wait ${Math.ceil(60 - secondsAgo)} more seconds before requesting another link.`
+          );
+        }
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo:
-          typeof window !== "undefined" ? window.location.origin : "",
-      },
+      options: { emailRedirectTo: redirectTo },
     });
+
     if (error) throw error;
+
+    // Record send time for cooldown
+    if (typeof window !== "undefined") {
+      localStorage.setItem("maslow_otp_last_sent", String(Date.now()));
+    }
   },
 
   signOut: async () => {
     await supabase.auth.signOut();
+    // Clear local flags
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("maslow_onboarded");
+      localStorage.removeItem("maslow_pending_name");
+      localStorage.removeItem("maslow_otp_last_sent");
+    }
   },
 
   // ── Load all data ────────────────────────────────────────────────────────────
@@ -160,10 +190,10 @@ export const useStore = create<FinanceStore>()((set, get) => ({
       get().loadDebts(),
       get().loadMilestones(),
       get().loadCadenceCompletions(),
-      // Load profile separately
       (async () => {
         const userId = get().userId;
         if (!userId) return;
+
         const { data } = await supabase
           .from("profiles")
           .select("*")
@@ -178,13 +208,12 @@ export const useStore = create<FinanceStore>()((set, get) => ({
               age: data.age || 24,
               dependants: data.dependants || 0,
             },
-            // Budget limits are stored as JSON column in profiles
             budgetCategories: data.budget_categories
               ? JSON.parse(data.budget_categories)
               : DEFAULT_BUDGET_CATEGORIES,
           });
         } else {
-          // First time login — create profile row
+          // First login — seed profile, milestones and default goal
           await supabase.from("profiles").insert({
             id: userId,
             name: "",
@@ -193,7 +222,7 @@ export const useStore = create<FinanceStore>()((set, get) => ({
             dependants: 0,
             budget_categories: JSON.stringify(DEFAULT_BUDGET_CATEGORIES),
           });
-          // Seed default milestones for this user
+
           const milestones = DEFAULT_MILESTONES.map((m) => ({
             id: m.id,
             user_id: userId,
@@ -204,9 +233,9 @@ export const useStore = create<FinanceStore>()((set, get) => ({
           }));
           await supabase.from("tier_milestones").upsert(milestones);
           set({ tierMilestones: DEFAULT_MILESTONES });
-          // Seed default emergency fund goal
+
           await supabase.from("savings_goals").upsert({
-            id: "sg_emergency",
+            id: `sg_emergency_${userId}`,
             user_id: userId,
             name: "Emergency Fund",
             description: "6 months of expenses for financial safety",
@@ -232,14 +261,19 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     const userId = get().userId;
     if (!userId) return;
 
+    // Optimistic local update
     set((s) => ({ profile: { ...s.profile, ...data } }));
 
-    await supabase.from("profiles").update({
-      name: data.name ?? get().profile.name,
-      monthly_income: data.monthlyIncome ?? get().profile.monthlyIncome,
-      age: data.age ?? get().profile.age,
-      dependants: data.dependants ?? get().profile.dependants,
-    }).eq("id", userId);
+    const current = get().profile;
+    await supabase
+      .from("profiles")
+      .update({
+        name: data.name ?? current.name,
+        monthly_income: data.monthlyIncome ?? current.monthlyIncome,
+        age: data.age ?? current.age,
+        dependants: data.dependants ?? current.dependants,
+      })
+      .eq("id", userId);
   },
 
   // ── Transactions ─────────────────────────────────────────────────────────────
@@ -257,16 +291,16 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) { console.error("loadTransactions:", error); return; }
 
-    const mapped: Transaction[] = (data || []).map((r) => ({
-      id: r.id,
-      date: r.date,
-      amount: r.amount,
-      category: r.category,
-      description: r.description || "",
-      type: r.type,
-    }));
-
-    set({ transactions: mapped });
+    set({
+      transactions: (data || []).map((r) => ({
+        id: r.id,
+        date: r.date,
+        amount: r.amount,
+        category: r.category,
+        description: r.description || "",
+        type: r.type,
+      })),
+    });
   },
 
   addTransaction: async (t) => {
@@ -274,7 +308,15 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     if (!userId) return;
 
     const id = generateId();
-    const row = {
+
+    // Optimistic
+    set((s) => ({
+      transactions: [{ ...t, id }, ...s.transactions].sort(
+        (a, b) => b.date.localeCompare(a.date)
+      ),
+    }));
+
+    const { error } = await supabase.from("transactions").insert({
       id,
       user_id: userId,
       date: t.date,
@@ -282,19 +324,10 @@ export const useStore = create<FinanceStore>()((set, get) => ({
       category: t.category,
       description: t.description || "",
       type: t.type,
-    };
+    });
 
-    // Optimistic update
-    set((s) => ({
-      transactions: [{ ...t, id }, ...s.transactions].sort(
-        (a, b) => b.date.localeCompare(a.date)
-      ),
-    }));
-
-    const { error } = await supabase.from("transactions").insert(row);
     if (error) {
       console.error("addTransaction:", error);
-      // Rollback
       set((s) => ({ transactions: s.transactions.filter((tx) => tx.id !== id) }));
     }
   },
@@ -303,7 +336,6 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     const userId = get().userId;
     if (!userId) return;
 
-    // Optimistic update
     set((s) => ({
       transactions: s.transactions.map((t) =>
         t.id === id ? { ...t, ...data } : t
@@ -324,7 +356,7 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) {
       console.error("updateTransaction:", error);
-      await get().loadTransactions(); // Refetch on error
+      await get().loadTransactions();
     }
   },
 
@@ -332,7 +364,6 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     const userId = get().userId;
     if (!userId) return;
 
-    // Optimistic update
     const prev = get().transactions;
     set((s) => ({ transactions: s.transactions.filter((t) => t.id !== id) }));
 
@@ -344,12 +375,11 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) {
       console.error("deleteTransaction:", error);
-      set({ transactions: prev }); // Rollback
+      set({ transactions: prev });
     }
   },
 
   // ── Budget categories ────────────────────────────────────────────────────────
-  // Stored as a JSON column in the profiles table to avoid a separate table
   budgetCategories: DEFAULT_BUDGET_CATEGORIES,
 
   updateBudgetLimit: async (category, limit) => {
@@ -383,18 +413,18 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) { console.error("loadSavingsGoals:", error); return; }
 
-    const mapped: SavingsGoal[] = (data || []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description || "",
-      target: r.target,
-      current: r.current,
-      tier: r.tier,
-      color: r.color || "#EA580C",
-      deadline: r.deadline || undefined,
-    }));
-
-    set({ savingsGoals: mapped });
+    set({
+      savingsGoals: (data || []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description || "",
+        target: r.target,
+        current: r.current,
+        tier: r.tier,
+        color: r.color || "#EA580C",
+        deadline: r.deadline || undefined,
+      })),
+    });
   },
 
   addSavingsGoal: async (goal) => {
@@ -402,7 +432,10 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     if (!userId) return;
 
     const id = generateId();
-    const row = {
+
+    set((s) => ({ savingsGoals: [...s.savingsGoals, { ...goal, id }] }));
+
+    const { error } = await supabase.from("savings_goals").insert({
       id,
       user_id: userId,
       name: goal.name,
@@ -412,12 +445,8 @@ export const useStore = create<FinanceStore>()((set, get) => ({
       tier: goal.tier,
       color: goal.color || "#EA580C",
       deadline: goal.deadline || null,
-    };
+    });
 
-    // Optimistic
-    set((s) => ({ savingsGoals: [...s.savingsGoals, { ...goal, id }] }));
-
-    const { error } = await supabase.from("savings_goals").insert(row);
     if (error) {
       console.error("addSavingsGoal:", error);
       set((s) => ({ savingsGoals: s.savingsGoals.filter((g) => g.id !== id) }));
@@ -488,18 +517,18 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) { console.error("loadDebts:", error); return; }
 
-    const mapped: Debt[] = (data || []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      lender: r.lender || "",
-      originalAmount: r.original_amount,
-      currentBalance: r.current_balance,
-      interestRate: r.interest_rate,
-      monthlyPayment: r.monthly_payment,
-      startDate: r.start_date || "",
-    }));
-
-    set({ debts: mapped });
+    set({
+      debts: (data || []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        lender: r.lender || "",
+        originalAmount: r.original_amount,
+        currentBalance: r.current_balance,
+        interestRate: r.interest_rate,
+        monthlyPayment: r.monthly_payment,
+        startDate: r.start_date || "",
+      })),
+    });
   },
 
   addDebt: async (debt) => {
@@ -507,7 +536,14 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     if (!userId) return;
 
     const id = generateId();
-    const row = {
+
+    set((s) => ({
+      debts: [...s.debts, { ...debt, id }].sort(
+        (a, b) => b.interestRate - a.interestRate
+      ),
+    }));
+
+    const { error } = await supabase.from("debts").insert({
       id,
       user_id: userId,
       name: debt.name,
@@ -517,15 +553,8 @@ export const useStore = create<FinanceStore>()((set, get) => ({
       interest_rate: debt.interestRate,
       monthly_payment: debt.monthlyPayment,
       start_date: debt.startDate || null,
-    };
+    });
 
-    set((s) => ({
-      debts: [...s.debts, { ...debt, id }].sort(
-        (a, b) => b.interestRate - a.interestRate
-      ),
-    }));
-
-    const { error } = await supabase.from("debts").insert(row);
     if (error) {
       console.error("addDebt:", error);
       set((s) => ({ debts: s.debts.filter((d) => d.id !== id) }));
@@ -593,18 +622,17 @@ export const useStore = create<FinanceStore>()((set, get) => ({
       .order("tier", { ascending: true });
 
     if (error) { console.error("loadMilestones:", error); return; }
+    if (!data || data.length === 0) return;
 
-    if (!data || data.length === 0) return; // Will be seeded in loadAllData
-
-    const mapped: TierMilestone[] = data.map((r) => ({
-      id: r.id,
-      tier: r.tier,
-      text: r.text,
-      completed: r.completed,
-      completedDate: r.completed_date || undefined,
-    }));
-
-    set({ tierMilestones: mapped });
+    set({
+      tierMilestones: data.map((r) => ({
+        id: r.id,
+        tier: r.tier,
+        text: r.text,
+        completed: r.completed,
+        completedDate: r.completed_date || undefined,
+      })),
+    });
   },
 
   toggleMilestone: async (id) => {
@@ -617,7 +645,6 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     const newCompleted = !milestone.completed;
     const completedDate = newCompleted ? new Date().toISOString() : null;
 
-    // Optimistic
     set((s) => ({
       tierMilestones: s.tierMilestones.map((m) =>
         m.id === id
@@ -652,13 +679,13 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     if (error) { console.error("loadCadenceCompletions:", error); return; }
 
-    const mapped: CadenceCompletion[] = (data || []).map((r) => ({
-      itemId: r.item_id,
-      periodKey: r.period_key,
-      completedAt: r.completed_at,
-    }));
-
-    set({ cadenceCompletions: mapped });
+    set({
+      cadenceCompletions: (data || []).map((r) => ({
+        itemId: r.item_id,
+        periodKey: r.period_key,
+        completedAt: r.completed_at,
+      })),
+    });
   },
 
   completeCadenceItem: async (itemId, periodKey) => {
@@ -672,7 +699,6 @@ export const useStore = create<FinanceStore>()((set, get) => ({
 
     const completedAt = new Date().toISOString();
 
-    // Optimistic
     set((s) => ({
       cadenceCompletions: [
         ...s.cadenceCompletions,
@@ -701,7 +727,6 @@ export const useStore = create<FinanceStore>()((set, get) => ({
     const userId = get().userId;
     if (!userId) return;
 
-    // Optimistic
     set((s) => ({
       cadenceCompletions: s.cadenceCompletions.filter(
         (c) => !(c.itemId === itemId && c.periodKey === periodKey)
