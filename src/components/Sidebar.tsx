@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Receipt, PieChart, Target, CreditCard,
-  TrendingUp, Calendar, Settings, Triangle, X, Menu,
+  TrendingUp, Calendar, Settings, Triangle, X, Menu, LogOut,
 } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
@@ -24,7 +24,8 @@ const NAV = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { profile, transactions, debts } = useStore();
+  const [signingOut, setSigningOut] = useState(false);
+  const { profile, transactions, debts, signOut } = useStore();
 
   const monthKey = getCurrentMonthKey();
   const monthExpenses = sumTransactions(getExpensesForMonth(transactions, monthKey));
@@ -32,8 +33,35 @@ export default function Sidebar() {
   const tier = detectCurrentTier(profile.monthlyIncome, monthExpenses, 0, totalDebt);
   const tc = TIER_CONFIG[tier as keyof typeof TIER_CONFIG];
 
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await signOut();
+      // Clear onboarding flag so next login goes through onboarding check fresh
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("maslow_onboarded");
+        localStorage.removeItem("maslow_pending_name");
+      }
+      window.location.href = "/";
+    } catch (e) {
+      console.error("Sign out failed:", e);
+      setSigningOut(false);
+    }
+  }
+
+  // Avatar initials from profile name
+  const initials = profile.name
+    ? profile.name
+        .split(" ")
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : "MF";
+
   const NavContent = () => (
     <div className="flex flex-col h-full">
+
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-800">
         <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
@@ -67,8 +95,10 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Tier status at bottom */}
-      <div className="px-3 py-4 border-t border-gray-800">
+      {/* Bottom section */}
+      <div className="px-3 py-4 border-t border-gray-800 space-y-2">
+
+        {/* Current tier chip */}
         <div className="px-3 py-3 rounded-lg bg-gray-800">
           <div className="text-xs text-gray-400 mb-1">Current tier</div>
           <div className="flex items-center gap-2">
@@ -80,12 +110,46 @@ export default function Sidebar() {
               {tier}. {tc.short}
             </span>
           </div>
-          {profile.name && (
-            <div className="text-gray-400 text-xs mt-1 truncate">
-              {profile.name}
-            </div>
-          )}
+          {/* Tier mini progress bar */}
+          <div className="mt-2 h-1 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${(tier / 5) * 100}%`, backgroundColor: tc.color }}
+            />
+          </div>
         </div>
+
+        {/* User profile row + sign out */}
+        <div className="flex items-center gap-2 px-1 pt-1">
+          {/* Avatar */}
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+            style={{ backgroundColor: tc.color + "33", color: tc.color }}
+          >
+            {initials}
+          </div>
+
+          {/* Name + email truncated */}
+          <div className="flex-1 min-w-0">
+            <div className="text-white text-xs font-medium truncate">
+              {profile.name || "My Account"}
+            </div>
+            <div className="text-gray-500 text-[10px] truncate">
+              Tier {tier} · {tc.name}
+            </div>
+          </div>
+
+          {/* Sign out button */}
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            title="Sign out"
+            className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-gray-500 hover:text-white hover:bg-gray-700 transition-all disabled:opacity-50"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
       </div>
     </div>
   );
@@ -105,9 +169,20 @@ export default function Sidebar() {
           </div>
           <span className="text-white font-semibold text-sm">Maslow Finance</span>
         </div>
-        <button onClick={() => setOpen(true)} className="text-gray-400 hover:text-white">
-          <Menu className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Mobile sign out */}
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="text-gray-400 hover:text-white disabled:opacity-50"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+          <button onClick={() => setOpen(true)} className="text-gray-400 hover:text-white">
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Mobile drawer */}
