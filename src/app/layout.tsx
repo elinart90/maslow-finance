@@ -3,10 +3,20 @@ import "./globals.css";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import Sidebar from "@/components/Sidebar";
-import { Triangle, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Triangle, ArrowLeft, CheckCircle2, RefreshCw } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 type AuthScreen = "login" | "signup";
+
+// ─── Helper: is onboarding complete? ─────────────────────────────────────────
+// Requires name, age > 0, and monthlyIncome > 0.
+// Income is intentionally flexible — users can update it anytime in Settings.
+function isOnboarded(profile: { name: string; age: number; monthlyIncome: number }) {
+  return (
+    profile.name.trim().length > 0 &&
+    profile.age > 0 &&
+    profile.monthlyIncome > 0
+  );
+}
 
 // ─── Loading Screen ───────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -37,9 +47,7 @@ function Logo() {
         <Triangle className="w-5 h-5 text-white fill-white" />
       </div>
       <div>
-        <div className="font-semibold text-gray-900 text-lg leading-none">
-          Maslow Finance
-        </div>
+        <div className="font-semibold text-gray-900 text-lg leading-none">Maslow Finance</div>
         <div className="text-xs text-gray-400 mt-0.5">Life savings system</div>
       </div>
     </div>
@@ -59,10 +67,7 @@ function TierBar() {
           { color: "#2563EB", label: "Legacy" },
         ].map(({ color, label }) => (
           <div key={label} className="flex-1 text-center">
-            <div
-              className="h-1.5 rounded-full mb-1"
-              style={{ backgroundColor: color }}
-            />
+            <div className="h-1.5 rounded-full mb-1" style={{ backgroundColor: color }} />
             <div className="text-[9px] text-gray-300">{label}</div>
           </div>
         ))}
@@ -92,8 +97,8 @@ function LoginPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
     try {
       await signIn(email);
       setSent(true);
-    } catch {
-      setError("Failed to send link. Please try again.");
+    } catch (e: any) {
+      setError(e?.message || "Failed to send link. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -105,16 +110,11 @@ function LoginPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
         <div className="w-full max-w-sm">
           <Logo />
           <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
-            <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4 text-2xl">
-              ✉
-            </div>
-            <h2 className="font-semibold text-gray-900 text-lg mb-2">
-              Check your email
-            </h2>
+            <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4 text-2xl">✉</div>
+            <h2 className="font-semibold text-gray-900 text-lg mb-2">Check your email</h2>
             <p className="text-sm text-gray-500 leading-relaxed">
-              We sent a magic link to{" "}
-              <strong className="text-gray-700">{email}</strong>. Click it to
-              sign in — no password needed.
+              We sent a magic link to <strong className="text-gray-700">{email}</strong>.
+              Click it to sign in — no password needed.
             </p>
             <button
               className="mt-6 text-xs text-gray-400 underline hover:text-gray-600"
@@ -134,12 +134,8 @@ function LoginPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
       <div className="w-full max-w-sm">
         <Logo />
         <div className="bg-white rounded-2xl border border-gray-200 p-8">
-          <h1 className="text-xl font-semibold text-gray-900 mb-1">
-            Welcome back
-          </h1>
-          <p className="text-sm text-gray-400 mb-6">
-            Sign in to your account to continue.
-          </p>
+          <h1 className="text-xl font-semibold text-gray-900 mb-1">Welcome back</h1>
+          <p className="text-sm text-gray-400 mb-6">Sign in to your account to continue.</p>
 
           <label className="label">Email address</label>
           <input
@@ -151,9 +147,7 @@ function LoginPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
             onKeyDown={(e) => e.key === "Enter" && handle()}
             autoFocus
           />
-          {error && (
-            <p className="text-xs text-red-500 mb-2 mt-1">{error}</p>
-          )}
+          {error && <p className="text-xs text-red-500 mb-2 mt-1">{error}</p>}
 
           <button
             className="btn-primary w-full justify-center mt-4"
@@ -170,14 +164,10 @@ function LoginPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
             <div className="flex-1 h-px bg-gray-100" />
           </div>
 
-          <button
-            className="btn-secondary w-full justify-center"
-            onClick={() => onSwitch("signup")}
-          >
+          <button className="btn-secondary w-full justify-center" onClick={() => onSwitch("signup")}>
             Create an account
           </button>
         </div>
-
         <TierBar />
         <p className="text-center text-xs text-gray-400 mt-4">
           Your data is private and encrypted. Only you can access it.
@@ -203,14 +193,8 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
   }
 
   async function handle() {
-    if (!form.name.trim()) {
-      setError("Please enter your name.");
-      return;
-    }
-    if (!form.email || !form.email.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
+    if (!form.name.trim()) { setError("Please enter your name."); return; }
+    if (!form.email || !form.email.includes("@")) { setError("Please enter a valid email address."); return; }
     setError("");
     setLoading(true);
     try {
@@ -219,8 +203,8 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
       }
       await signIn(form.email);
       setSent(true);
-    } catch {
-      setError("Failed to send verification email. Please try again.");
+    } catch (e: any) {
+      setError(e?.message || "Failed to send verification email. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -232,19 +216,13 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
         <div className="w-full max-w-sm">
           <Logo />
           <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
-            <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4 text-2xl">
-              ✉
-            </div>
-            <h2 className="font-semibold text-gray-900 text-lg mb-2">
-              Verify your email
-            </h2>
+            <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4 text-2xl">✉</div>
+            <h2 className="font-semibold text-gray-900 text-lg mb-2">Verify your email</h2>
             <p className="text-sm text-gray-500 leading-relaxed mb-2">
-              We sent a confirmation link to{" "}
-              <strong className="text-gray-700">{form.email}</strong>.
+              We sent a confirmation link to <strong className="text-gray-700">{form.email}</strong>.
             </p>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Click the link to activate your account. You will then complete
-              your financial profile setup.
+              Click the link to activate your account. You will then complete your financial profile.
             </p>
             <button
               className="mt-6 text-xs text-gray-400 underline hover:text-gray-600"
@@ -271,14 +249,9 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
             <ArrowLeft className="w-3 h-3" /> Back to sign in
           </button>
 
-          <h1 className="text-xl font-semibold text-gray-900 mb-1">
-            Create your account
-          </h1>
-          <p className="text-sm text-gray-400 mb-5">
-            Start your Maslow financial journey today.
-          </p>
+          <h1 className="text-xl font-semibold text-gray-900 mb-1">Create your account</h1>
+          <p className="text-sm text-gray-400 mb-5">Start your Maslow financial journey today.</p>
 
-          {/* Feature list */}
           <div className="bg-gray-50 rounded-xl p-4 mb-5 space-y-2">
             {[
               "Track expenses across all 5 Maslow tiers",
@@ -286,10 +259,7 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
               "Debt avalanche elimination tracker",
               "Weekly & annual financial cadence system",
             ].map((item) => (
-              <div
-                key={item}
-                className="flex items-center gap-2 text-xs text-gray-600"
-              >
+              <div key={item} className="flex items-center gap-2 text-xs text-gray-600">
                 <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
                 {item}
               </div>
@@ -299,25 +269,14 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
           <div className="space-y-4">
             <div>
               <label className="label">Your full name</label>
-              <input
-                type="text"
-                className="input"
-                placeholder="e.g. Elinart Asante"
-                value={form.name}
-                onChange={field("name")}
-                autoFocus
-              />
+              <input type="text" className="input" placeholder="e.g. Elinart Asante"
+                value={form.name} onChange={field("name")} autoFocus />
             </div>
             <div>
               <label className="label">Email address</label>
-              <input
-                type="email"
-                className="input"
-                placeholder="you@example.com"
-                value={form.email}
-                onChange={field("email")}
-                onKeyDown={(e) => e.key === "Enter" && handle()}
-              />
+              <input type="email" className="input" placeholder="you@example.com"
+                value={form.email} onChange={field("email")}
+                onKeyDown={(e) => e.key === "Enter" && handle()} />
             </div>
             {error && <p className="text-xs text-red-500">{error}</p>}
           </div>
@@ -330,7 +289,6 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
           >
             {loading ? "Creating account…" : "Create account →"}
           </button>
-
           <p className="text-xs text-gray-400 text-center mt-4">
             We'll email you a verification link. No password required.
           </p>
@@ -339,10 +297,7 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
         <TierBar />
         <p className="text-center text-xs text-gray-400 mt-4">
           Already have an account?{" "}
-          <button
-            className="underline hover:text-gray-600"
-            onClick={() => onSwitch("login")}
-          >
+          <button className="underline hover:text-gray-600" onClick={() => onSwitch("login")}>
             Sign in
           </button>
         </p>
@@ -351,39 +306,41 @@ function SignupPage({ onSwitch }: { onSwitch: (s: AuthScreen) => void }) {
   );
 }
 
-// ─── Onboarding (shown once after first signup) ───────────────────────────────
-function OnboardingPage() {
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+// Shown whenever profile.name, profile.age, or profile.monthlyIncome is missing.
+// Income is intentionally re-editable — users can change it anytime in Settings.
+function OnboardingPage({ isUpdate = false }: { isUpdate?: boolean }) {
   const { updateProfile, profile } = useStore();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     name:
+      profile.name ||
       (typeof window !== "undefined"
         ? localStorage.getItem("maslow_pending_name") || ""
-        : "") || profile.name,
-    monthlyIncome: "",
-    age: "",
-    dependants: "0",
+        : ""),
+    monthlyIncome: profile.monthlyIncome > 0 ? String(profile.monthlyIncome) : "",
+    age: profile.age > 0 ? String(profile.age) : "",
+    dependants: String(profile.dependants ?? 0),
   });
 
   function field(key: keyof typeof form) {
-    return (
-      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-    ) => setForm((f) => ({ ...f, [key]: e.target.value }));
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((f) => ({ ...f, [key]: e.target.value }));
   }
 
   async function finish() {
     setLoading(true);
     await updateProfile({
-      name: form.name,
+      name: form.name.trim(),
       monthlyIncome: Number(form.monthlyIncome),
       age: Number(form.age),
       dependants: Number(form.dependants),
     });
     if (typeof window !== "undefined") {
       localStorage.removeItem("maslow_pending_name");
-      localStorage.setItem("maslow_onboarded", "true");
     }
+    setLoading(false);
     window.location.href = "/";
   }
 
@@ -400,27 +357,27 @@ function OnboardingPage() {
       <div className="w-full max-w-lg">
         <Logo />
 
+        {isUpdate && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 text-center">
+            Some profile details are missing. Please complete your profile to continue.
+          </div>
+        )}
+
         {/* Step dots */}
         <div className="flex items-center gap-2 mb-6 justify-center">
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
-                  s === step
-                    ? "bg-gray-900 text-white"
-                    : s < step
-                    ? "bg-green-500 text-white"
-                    : "bg-gray-100 text-gray-400"
+                  s === step ? "bg-gray-900 text-white"
+                  : s < step ? "bg-green-500 text-white"
+                  : "bg-gray-100 text-gray-400"
                 }`}
               >
                 {s < step ? "✓" : s}
               </div>
               {s < 3 && (
-                <div
-                  className={`w-10 h-px ${
-                    s < step ? "bg-green-400" : "bg-gray-200"
-                  }`}
-                />
+                <div className={`w-10 h-px ${s < step ? "bg-green-400" : "bg-gray-200"}`} />
               )}
             </div>
           ))}
@@ -432,39 +389,29 @@ function OnboardingPage() {
           {step === 1 && (
             <div>
               <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-                Welcome{form.name ? `, ${form.name.split(" ")[0]}` : ""}! 👋
+                {isUpdate ? "Update your profile" : `Welcome${form.name ? `, ${form.name.split(" ")[0]}` : ""}! 👋`}
               </h1>
               <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                Let's set up your financial profile. This takes 2 minutes and
-                helps the system automatically detect your current Maslow tier.
+                {isUpdate
+                  ? "Your name or age is missing. Please fill these in to continue."
+                  : "Let's set up your financial profile. This takes 2 minutes and helps the system detect your current Maslow tier automatically."}
               </p>
-
               <div className="space-y-4">
                 <div>
                   <label className="label">Your full name</label>
                   <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g. Elinart Asante"
-                    value={form.name}
-                    onChange={field("name")}
-                    autoFocus
+                    type="text" className="input" placeholder="e.g. Elinart Asante"
+                    value={form.name} onChange={field("name")} autoFocus
                   />
                 </div>
                 <div>
                   <label className="label">Your age</label>
                   <input
-                    type="number"
-                    className="input"
-                    placeholder="e.g. 24"
-                    min="18"
-                    max="80"
-                    value={form.age}
-                    onChange={field("age")}
+                    type="number" className="input" placeholder="e.g. 24"
+                    min="18" max="80" value={form.age} onChange={field("age")}
                   />
                 </div>
               </div>
-
               <button
                 className="btn-primary w-full justify-center mt-6"
                 onClick={() => setStep(2)}
@@ -484,26 +431,25 @@ function OnboardingPage() {
               >
                 <ArrowLeft className="w-3 h-3" /> Back
               </button>
-
-              <h2 className="text-xl font-semibold text-gray-900 mb-1">
-                Your financial situation
-              </h2>
-              <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-                Be honest — this is only visible to you and helps the system
-                give you accurate, personalised advice.
+              <h2 className="text-xl font-semibold text-gray-900 mb-1">Your financial situation</h2>
+              <p className="text-sm text-gray-400 mb-2 leading-relaxed">
+                Be honest — only you can see this. Your income can be updated anytime in Settings
+                as your earnings change.
               </p>
-
+              {/* Income is flexible note */}
+              <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-xl mb-5">
+                <RefreshCw className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-700">
+                  Your monthly income can be updated anytime from Settings → Your profile.
+                  The system recalculates your tier allocation automatically whenever you change it.
+                </p>
+              </div>
               <div className="space-y-4">
                 <div>
-                  <label className="label">Monthly income (GH₵)</label>
+                  <label className="label">Current monthly income (GH₵)</label>
                   <input
-                    type="number"
-                    className="input"
-                    placeholder="e.g. 5000"
-                    min="0"
-                    value={form.monthlyIncome}
-                    onChange={field("monthlyIncome")}
-                    autoFocus
+                    type="number" className="input" placeholder="e.g. 5000"
+                    min="0" value={form.monthlyIncome} onChange={field("monthlyIncome")} autoFocus
                   />
                   <p className="text-xs text-gray-400 mt-1">
                     Include salary plus any regular side income.
@@ -511,11 +457,7 @@ function OnboardingPage() {
                 </div>
                 <div>
                   <label className="label">Number of dependants</label>
-                  <select
-                    className="input"
-                    value={form.dependants}
-                    onChange={field("dependants")}
-                  >
+                  <select className="input" value={form.dependants} onChange={field("dependants")}>
                     <option value="0">None — only myself</option>
                     <option value="1">1 (spouse, child, or parent)</option>
                     <option value="2">2</option>
@@ -526,11 +468,10 @@ function OnboardingPage() {
                   </p>
                 </div>
               </div>
-
               <button
                 className="btn-primary w-full justify-center mt-6"
                 onClick={() => setStep(3)}
-                disabled={!form.monthlyIncome}
+                disabled={!form.monthlyIncome || Number(form.monthlyIncome) <= 0}
               >
                 Continue →
               </button>
@@ -546,15 +487,10 @@ function OnboardingPage() {
               >
                 <ArrowLeft className="w-3 h-3" /> Back
               </button>
-
-              <h2 className="text-xl font-semibold text-gray-900 mb-1">
-                Your 5-tier financial system
-              </h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-1">Your 5-tier financial system</h2>
               <p className="text-sm text-gray-400 mb-5 leading-relaxed">
-                Work through tiers in order — never skip levels. Maslow's
-                research shows unmet lower needs block higher-tier thinking.
+                Work through tiers in order — never skip levels.
               </p>
-
               <div className="space-y-2 mb-6">
                 {TIERS.map((t) => (
                   <div
@@ -569,23 +505,16 @@ function OnboardingPage() {
                       {t.n}
                     </div>
                     <div>
-                      <div
-                        className="text-sm font-semibold"
-                        style={{ color: t.color }}
-                      >
-                        {t.label}
-                      </div>
+                      <div className="text-sm font-semibold" style={{ color: t.color }}>{t.label}</div>
                       <div className="text-xs text-gray-400">{t.sub}</div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Summary confirmation */}
+              {/* Summary */}
               <div className="bg-gray-50 rounded-xl p-4 mb-6 space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  Your profile
-                </p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your profile</p>
                 {[
                   ["Name", form.name],
                   ["Age", form.age],
@@ -612,7 +541,7 @@ function OnboardingPage() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-5">
-          You can update all these details anytime in Settings.
+          Income and all other details can be updated anytime in Settings.
         </p>
       </div>
     </div>
@@ -622,59 +551,53 @@ function OnboardingPage() {
 // ─── Auth Wrapper ─────────────────────────────────────────────────────────────
 function AuthWrapper() {
   const [screen, setScreen] = useState<AuthScreen>("login");
-  const { isAuthenticated } = useStore();
-
-  // If user just verified their email and is authenticated but hasn't onboarded
-  const needsOnboarding =
-    isAuthenticated &&
-    typeof window !== "undefined" &&
-    !localStorage.getItem("maslow_onboarded");
-
-  if (needsOnboarding) return <OnboardingPage />;
   if (screen === "signup") return <SignupPage onSwitch={setScreen} />;
   return <LoginPage onSwitch={setScreen} />;
 }
 
 // ─── Root Layout ──────────────────────────────────────────────────────────────
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { initAuth, isAuthenticated, isLoading } = useStore();
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const { initAuth, isAuthenticated, isLoading, profile } = useStore();
 
   useEffect(() => {
     initAuth();
   }, []);
 
-  // Checking session
+  // Still resolving session
   if (isLoading) {
     return (
       <html lang="en">
-        <body>
-          <LoadingScreen />
-        </body>
+        <body><LoadingScreen /></body>
       </html>
     );
   }
 
-  // Not authenticated OR authenticated but not onboarded yet
-  const needsOnboarding =
-    isAuthenticated &&
-    typeof window !== "undefined" &&
-    !localStorage.getItem("maslow_onboarded");
-
-  if (!isAuthenticated || needsOnboarding) {
+  // Not logged in
+  if (!isAuthenticated) {
     return (
       <html lang="en">
-        <body>
-          <AuthWrapper />
-        </body>
+        <body><AuthWrapper /></body>
       </html>
     );
   }
 
-  // Fully authenticated and onboarded — show the app
+  // ── Onboarding gate ───────────────────────────────────────────────────────
+  // All three fields must be present. Income is checked > 0 separately
+  // because 0 income is not a valid starting point for the tier system.
+  // Users who update their income (e.g. got a raise) do so in Settings,
+  // never by being forced back through onboarding again.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (!isOnboarded(profile)) {
+    // isUpdate=true shows an amber notice if some fields are already set
+    const isPartial = profile.name.length > 0 || profile.age > 0 || profile.monthlyIncome > 0;
+    return (
+      <html lang="en">
+        <body><OnboardingPage isUpdate={isPartial} /></body>
+      </html>
+    );
+  }
+
+  // Fully authenticated and onboarded
   return (
     <html lang="en">
       <body className="flex h-screen overflow-hidden bg-[#F9F9F7]">
