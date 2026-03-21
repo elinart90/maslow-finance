@@ -65,7 +65,7 @@ interface DayTask {
 }
 
 // ─── Helper to build task IDs ─────────────────────────────────────────────────
-const t = (profile: string, day: number, rest: Omit<DayTask, "id">): DayTask => ({
+const t = (profile: string, day: number, rest: Omit<DayTask, "id" | "day">): DayTask => ({
   id: `${profile}_d${String(day).padStart(2, "0")}`,
   day,
   ...rest,
