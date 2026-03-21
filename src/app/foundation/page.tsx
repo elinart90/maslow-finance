@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
+type StoreState = ReturnType<typeof useStore>;
 import { TIER_CONFIG } from "@/lib/constants";
 import {
   fmt, detectCurrentTier, sumTransactions,
@@ -59,7 +60,7 @@ interface DayTask {
   toolHref?: string;
   wisdom: string;
   verifyMode: VerificationMode;
-  autoVerify?: (store: ReturnType<typeof useStore>) => boolean;
+  autoVerify?: (store: StoreState) => boolean;
   evidence?: EvidenceConfig;
   checkin?: { question: string; options: string[] };
 }
