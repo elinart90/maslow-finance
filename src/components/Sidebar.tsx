@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { Flame } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Receipt, PieChart, Target, CreditCard,
@@ -12,6 +13,7 @@ import { detectCurrentTier, sumTransactions, getExpensesForMonth, getCurrentMont
 
 const NAV = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/foundation", icon: Flame, label: "30-Day Foundation" },
   { href: "/expenses", icon: Receipt, label: "Expenses" },
   { href: "/budget", icon: PieChart, label: "Budget" },
   { href: "/savings", icon: Target, label: "Savings" },

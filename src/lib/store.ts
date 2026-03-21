@@ -200,19 +200,31 @@ export const useStore = create<FinanceStore>()((set, get) => ({
           .eq("id", userId)
           .single();
 
-        if (data) {
-          set({
-            profile: {
-              name: data.name || "",
-              monthlyIncome: data.monthly_income || 5000,
-              age: data.age || 24,
-              dependants: data.dependants || 0,
-            },
-            budgetCategories: data.budget_categories
-              ? JSON.parse(data.budget_categories)
-              : DEFAULT_BUDGET_CATEGORIES,
-          });
-        } else {
+          if (data) {
+            let parsedCategories = DEFAULT_BUDGET_CATEGORIES;
+            
+            if (data.budget_categories) {
+              try {
+                const parsed = JSON.parse(data.budget_categories);
+                // Only use if it's a valid non-empty array
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsedCategories = parsed;
+                }
+              } catch (e) {
+                console.error("Failed to parse budget_categories:", e);
+              }
+            }
+          
+            set({
+              profile: {
+                name: data.name || "",
+                monthlyIncome: data.monthly_income || 5000,
+                age: data.age || 24,
+                dependants: data.dependants || 0,
+              },
+              budgetCategories: parsedCategories,
+            });
+          } else {
           // First login — seed profile, milestones and default goal
           await supabase.from("profiles").insert({
             id: userId,
