@@ -53,7 +53,7 @@ function dayLabel(dateStr: string): string {
 
 function dayStreak(dates: string[]): number {
   if (dates.length === 0) return 0;
-  const unique = [...new Set(dates)].sort().reverse();
+  const unique = Array.from(new Set(dates)).sort().reverse();
   let streak = 0;
   const today = todayISO();
   let cursor = today;
